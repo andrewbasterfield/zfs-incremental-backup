@@ -10,4 +10,6 @@ The snapshots are expected in the format date +%Y%m%d%H%M%S e.g. 20150118224238;
 format are ignored. The script chooses the 'start' snapshot based on the latest snapshot present in both the start
 and destination ZFS data-sets. The 'end' snapshot is generated at the execution time of the script.
 
+The shell script zfs-incremental.sh wraps the perl script with application-specific arguments to make it work.
+
 At the end of execution of the script unecessary source snapshots are destroyed.
