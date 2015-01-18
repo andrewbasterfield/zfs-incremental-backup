@@ -1,0 +1,11 @@
+NAME                                      USED  AVAIL  REFER  MOUNTPOINT
+source@20150117225148                         0      -   230K  -
+source@20150118095536                         0      -   230K  -
+source@20150119095536                         0      -   230K  -
+source/ROOT@20150117225148                    0      -   230K  -
+source/ROOT@20150118095536                    0      -   230K  -
+source/ROOT@20150119095536                    0      -   230K  -
+destination@20150117225148                 8K      -   144K  -
+destination@20150118095536                  0      -   144K  -
+destination/ROOT@20150117225148            8K      -   144K  -
+#destination/ROOT@20150118095536             0      -   144K  -
