@@ -1,5 +1,4 @@
-# zfs-incremental-backup Scripts for performing ZFS incremental backup
-(using ZFS send/recv) optionally over SSH
+# zfs-incremental-backup Scripts for performing ZFS incremental backup (using ZFS send/recv) optionally over SSH
 
 The perl script zfs-incremental.pl contains the (hopefully fairly generic)
 logic to determine the latest common start snapshot (if possible) for
