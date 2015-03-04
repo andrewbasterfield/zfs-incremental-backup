@@ -2,19 +2,17 @@
 
 set -e
 
-src_dataset="rpool"
-dst_dataset="zroot/backup"
-dst_user="backup@userver"
+src_dataset="rpool" # local zpool to backup
+dst_dataset="zroot/backup" # local or remote destination zpool
+dst_ssh="ssh -c arcfour zfsbackup@userver sudo" # arcfour is faster
+pipeline="mbuffer -q -v 0 -s 128k -m 1024k | pv"
 
-
-if [ -n "$dst_user" ]; then
-  dst_ssh="ssh -c arcfour zfsbackup@userver sudo"
+if [ -z "$pipeline" ]; then
+  pipeline="cat -"
 fi
 
-#zfs list -t snapshot | ./zfs-incremental.pl "$src_dataset" "$dst_dataset" | sh -e -x | mbuffer -q -v 0 -s 128k -m 1024k | zfs recv "$dst_dataset"
-
-if [ -n "$dst_user" ]; then
-  dst_ssh="ssh -c arcfour zfsbackup@userver sudo"
+if [ -n "$dst_ssh" ]; then
+  (zfs list -t snapshot; $dst_ssh zfs list -t snapshot) | ./zfs-incremental.pl "$src_dataset" "$dst_dataset" | sh -ex | sh -ex -c "$pipeline" | $dst_ssh zfs recv -F "$dst_dataset"
+else
+  zfs list -t snapshot | ./zfs-incremental.pl "$src_dataset" "$dst_dataset" | sh -ex | sh -ex -c "$pipeline" | zfs recv "$dst_dataset"
 fi
-
-(zfs list -t snapshot; $dst_ssh zfs list -t snapshot) | ./zfs-incremental.pl "$src_dataset" "$dst_dataset" | sh -e -x | mbuffer -q -v 0 -s 128k -m 1024k | pv | $dst_ssh zfs recv -F "$dst_dataset"
