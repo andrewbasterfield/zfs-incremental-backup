@@ -5,12 +5,24 @@ use strict;
 use Data::Dumper;
 my $debug = 1;
 
+use constant {
+  INCREMENTAL => 0,
+  COMPLETE    => 1,
+};
+
 my $src_dataset = $ARGV[0];
 my $dst_dataset = $ARGV[1];
+my $prefix      = $ARGV[2] || '';
+
+$prefix .= "-" if ($prefix);
 
 unless ($src_dataset && $dst_dataset) {
-  print "Usage: $0 <src zfs> <dest zfs>\n";
+  print STDERR "Usage: $0 <src zfs> <dest zfs> [optional snapshot prefix]\n";
   exit 1;
+}
+
+if ($src_dataset eq $dst_dataset) {
+  print STDERR "Src dataset and dest dataset cannot have the same name\n";
 }
 
 #
@@ -18,19 +30,20 @@ unless ($src_dataset && $dst_dataset) {
 #
 my $snaps = {};
 while (my $line = <STDIN>) {
-  if ($line =~ m/^$src_dataset(\/+.*)?@([0-9]{14})/) {
+  if ($line =~ m/^$src_dataset(\/+.*)?([@#])($prefix[0-9]{14})/) {
     my $dataset = $1 || '';
-    print STDERR "src: $dataset $2\n" if $debug;
-    $snaps->{$dataset}->{$2}->{'src'} = 1;
+    print STDERR "src: $dataset $3\n" if $debug;
+    $snaps->{$dataset}->{$3}->{'src'} = ($2 eq '@' ? 'snapshot' : 'bookmark');
   }
 
-  if ($line =~ m/^$dst_dataset(\/+.*)?@([0-9]{14})/) {
+  if ($line =~ m/^$dst_dataset(\/+.*)?@($prefix[0-9]{14})/) {
     my $dataset = $1 || '';
     print STDERR "dst: $dataset $2\n" if $debug;
     $snaps->{$dataset}->{$2}->{'dst'} = 1;
   }
 }
 
+print STDERR "SNAPSHOTS\n" if $debug;
 print STDERR Dumper($snaps) if $debug;
 
 #
@@ -39,9 +52,12 @@ print STDERR Dumper($snaps) if $debug;
 my $candidate_snaps = {};
 foreach my $dataset (sort keys %$snaps) {
   foreach my $snap (sort keys %{$snaps->{$dataset}}) {
-    $candidate_snaps->{$snap} = undef;
+    $candidate_snaps->{$snap} = INCREMENTAL;
   }
 }
+
+print STDERR "CANDIDATE SNAPS #1\n" if $debug;
+print STDERR Dumper($candidate_snaps) if $debug;
 
 my @deletion_list;
 foreach my $dataset (sort keys %$snaps) {
@@ -63,15 +79,20 @@ foreach my $dataset (sort keys %$snaps) {
           }
         }
         print STDERR "snapshot $snap still acceptable; no snaps on src\n" if exists $candidate_snaps->{$snap} and $debug;
+        $candidate_snaps->{$snap} = COMPLETE;
       } else {
         print STDERR "$snap is not present on destination of $dataset, discounting\n" if $debug;
         delete $candidate_snaps->{$snap};
       }
     }
-    push @deletion_list, "$src_dataset$dataset\@$snap" if $snaps->{$dataset}->{$snap}->{'src'};
+    if ($snaps->{$dataset}->{$snap}->{'src'}) {
+      push @deletion_list, "$src_dataset$dataset\@$snap" if $snaps->{$dataset}->{$snap}->{'src'} eq "snapshot";
+      push @deletion_list, "$src_dataset$dataset\#$snap" if $snaps->{$dataset}->{$snap}->{'src'} eq "bookmark";
+    }
   }
 }
 
+print STDERR "CANDIDATE SNAPS #2\n" if $debug;
 print STDERR Dumper($candidate_snaps) if $debug;
 
 my @candidate_list = sort keys %$candidate_snaps;
@@ -86,17 +107,29 @@ print STDERR "Found starting snapshot $start_snap\n" if $start_snap && $debug;
 my ( $sec, $min, $hour, $day, $month, $year, $wday, $yday, $isdst ) = localtime(time());
 my $now = sprintf("%04d%02d%02d%02d%02d%02d",1900+$year,1+$month,$day,$hour,$min,$sec);
 
-my $end_snap = $src_dataset.'@'.$now;
-
-#print "\n";
+my $end_snap = $src_dataset.'@'.$prefix.$now;
 print "zfs snapshot -r $end_snap\n";
+
+if (0) {
+  my $end_bookmark = $end_snap;
+  $end_bookmark =~ s/\@/#/;
+  
+  foreach my $dataset (keys %$snaps) {
+    print "zfs bookmark ".$src_dataset.$dataset.'@'.$prefix.$now." ".$src_dataset.$dataset.'#'.$prefix.$now."\n";
+  }
+  
+  print "zfs destroy $end_snap\n";
+  $end_snap = $end_bookmark;
+}
+
 #
 # -q quiet
 # -v verbosity zero
 # -s blocksize
 # -m total buffer size
 #
-print "zfs send -R ".(defined $start_snap ? "-i $start_snap" : "")." $end_snap\n";
+print STDERR Dumper($snaps);
+print "zfs send -R ".(defined $start_snap && $candidate_snaps->{$start_snap} == INCREMENTAL ? "-i $src_dataset". ( $snaps->{''}->{$start_snap}->{'src'} eq 'bookmark' ? '#' : '@' )  ."$start_snap" : "")." $end_snap\n";
 
 foreach my $snap (@deletion_list) {
   print "zfs destroy $snap\n";
